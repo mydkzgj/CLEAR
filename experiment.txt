@@ -1,0 +1,15 @@
+Experiments 1: fine tune the model after adding the nb_percentage parameter
+For all of the datasets, check the different combinations 
+log/nolog, norm/nonorm, hvg/nohvg, scale/noscale
+
+For our model, check the different combination of the parameters
+lr: 1e-2, 1e-1, 1
+aug_prob: 0.2, 0.5, 0.8
+nb_percentage: 0.2, 0.5, 0.8
+
+For the clustering algorithms, we check 2 settings (args.clustering)
+K-means: currently, we used the K as the number of unique ground truth labels. We need to check our model performance with 3 settings: k, k-1, k+1
+Leiden: use the graph algorithm to evaluate model performance. It contains 2 parameters, n_neighbors and resolution. We use 2 neighbor settings: 15 and 30. For the resolution, we check 4 settings: 0.2, 0.5, 1.0, 1.5
+
+Experiment 2: Run our method with different random seeds
+According to the Review 2's suggestion, we need to run the model with different random seeds (multiple times) to ensure that our results is robust and reproducible. We can do it after getting the best settings.

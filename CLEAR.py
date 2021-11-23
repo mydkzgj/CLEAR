@@ -91,7 +91,7 @@ parser.add_argument('--warmup_epoch', default=5, type=int,
 # augmentation prob
 parser.add_argument("--aug_prob", type=float, default=0.5,
                     help="The prob of doing augmentation")
-
+parser.add_argument("--nb_percentage", type=float, default=0.5, help="The percentage of augmentations")
 # cluster
 parser.add_argument('--cluster_name', default='kmeans', type=str,
                     help='name of clustering method', dest="cluster_name")
@@ -121,6 +121,11 @@ parser.add_argument('--exp_dir', default='./experiment_pcl', type=str,
 parser.add_argument('--save_dir', default='./result', type=str,
                     help='result saving directory')
 
+parser.add_argument("--clustering", default="kmeans", type=str, help="the clustering method")
+
+parser.add_argument("--num_neighbors", default=15, type=int, help="number of neighbors")
+
+parser.add_argument("--resolution", default=0.5, type=float, help="resolution")
 
 def main():
     args = parser.parse_args()
@@ -182,7 +187,7 @@ def main_worker(args):
         'apply_noise_prob': 0,
 
         # swap with the NB regressed mu
-        'nb_percentage': 0.8,
+        'nb_percentage': args.nb_percentage,
         'apply_nb_prob': args.aug_prob,
 
         # inner swap
@@ -302,7 +307,12 @@ def main_worker(args):
                     # multiple random experiments
                     best_ari, best_eval_supervised_metrics, best_pd_labels = -1, None, None
                     for random_seed in range(1):
-                        pd_labels = KMeans(n_clusters=num_cluster, random_state=args.seed).fit(embeddings).labels_
+                        if args.clustering  == "kmeans":
+                            pd_labels = KMeans(n_clusters=num_cluster, random_state=args.seed).fit(embeddings).labels_
+                        else if args.clustering == "leiden":
+                            pd_labels = leiden_clustering(adata, embeddings, args.num_neighbors, args.resolution)
+                        else:
+                            ValueError("Not implemented!")
                         # compute metrics
                         eval_supervised_metrics = compute_metrics(gt_labels, pd_labels)
                         if eval_supervised_metrics["ARI"] > best_ari:
@@ -419,6 +429,13 @@ def inference(eval_loader, model):
 
     return features, labels
 
+
+def leiden_clustering(adata,embeddings, num_neighbors=15, resolution=1.0):
+    adata.obsm["X_clear"] = embeddings
+    sc.pp.neighbors(adata, use_rep="X_clear", n_neighbors=num_neighbors)
+    sc.tl.leiden(adata, key_added="leiden_clear", resolution=resolution)
+    pred_labels = adata.obsm['leiden_clear']
+    return pred_labels
 
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
     torch.save(state, filename)
