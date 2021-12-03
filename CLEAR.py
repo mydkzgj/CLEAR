@@ -184,11 +184,11 @@ def main_worker(args):
         # (Add) gaussian noise
         'noise_percentage': 0.8,
         'sigma': 0.5,
-        'apply_noise_prob': 0,
+        'apply_noise_prob': args.aug_prob, #0,
 
         # swap with the NB regressed mu
         'nb_percentage': args.nb_percentage,
-        'apply_nb_prob': args.aug_prob,
+        'apply_nb_prob': 0, #args.aug_prob,
 
         # inner swap
         'swap_percentage': 0.1,
