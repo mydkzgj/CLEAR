@@ -309,7 +309,7 @@ def main_worker(args):
                     for random_seed in range(1):
                         if args.clustering  == "kmeans":
                             pd_labels = KMeans(n_clusters=num_cluster, random_state=args.seed).fit(embeddings).labels_
-                        else if args.clustering == "leiden":
+                        elif args.clustering == "leiden":
                             pd_labels = leiden_clustering(adata, embeddings, args.num_neighbors, args.resolution)
                         else:
                             ValueError("Not implemented!")
