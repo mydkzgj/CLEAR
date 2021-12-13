@@ -60,7 +60,7 @@ def preprocess_csv_to_h5ad(
     # 1. read data from h5ad, 10X or csv files.
     if input_h5ad_path != None and input_10X_path == None and count_csv_path == None:
         adata = sc.read_h5ad(input_h5ad_path)
-        print("Read data from h5ad file: {}".format(input_h5ad_path))
+        print("Read data from h5ad file: {} with {} cells and {} genes".format(input_h5ad_path, adata.shape[0], adata.shape[1]))
 
         _, h5ad_file_name = os.path.split(input_h5ad_path)
         save_file_name = h5ad_file_name
@@ -129,34 +129,44 @@ def preprocess_csv_to_h5ad(
         sc.pp.calculate_qc_metrics(adata, qc_vars=['ERCC'], percent_top=None, log1p=False, inplace=True)
         low_ERCC_mask = (adata.obs.pct_counts_ERCC < 10)
         adata = adata[low_ERCC_mask]
+        print("After filter, left {} cells and {} genes".format(adata.shape[0], adata.shape[1]))
         # must set the filter before doing sctransform
-        adata_sct = SCTransform(adata, inplace=False)
+        if do_scTransform == True:
+            adata_sct = SCTransform(adata, inplace=False)
 
     # dropout operation
     if drop_prob > 0:
         adata = dropout_events(adata, drop_prob=drop_prob)
+        print("Dropout Done!")
 
     # log operation and select highly variable gene
     # before normalization, we can select the most variant genes
     if do_log and np.max(adata.X > 100):
         sc.pp.log1p(adata)
-        sc.pp.log1p(adata_sct)
+        print("Log Done!")
+        if do_scTransform == True:
+            sc.pp.log1p(adata_sct)
         if do_select_hvg:
             sc.pp.highly_variable_genes(adata, min_mean=0.0125, max_mean=3, min_disp=0.5)
-            adata_sct = adata_sct[:, adata.var.highly_variable]
+            print("After Select HVG, left {} cells and {} genes".format(adata.shape[0], adata.shape[1]))
             adata = adata[:, adata.var.highly_variable]
-
+            if do_scTransform == True:
+                adata_sct = adata_sct[:, adata.var.highly_variable]
     else:
         if do_select_hvg and not do_log:
             sc.pp.highly_variable_genes(adata, flavor="seurat_v3", n_top_genes=5000)
-            adata_sct = adata_sct[:, adata.var.highly_variable]
+            print("After Select HVG, left {} cells and {} genes".format(adata.shape[0], adata.shape[1]))
             adata = adata[:, adata.var.highly_variable]
+            if do_scTransform == True:
+                adata_sct = adata_sct[:, adata.var.highly_variable]
 
     if do_norm == True:
         sc.pp.normalize_total(adata, target_sum=1e4, exclude_highly_expressed=True)
         adata.raw = adata
-        sc.pp.normalize_total(adata_sct, target_sum=1e4, exclude_highly_expressed=True)
-        adata_sct.raw = adata_sct
+        print("Normalization Done!")
+        if do_scTransform == True:
+            sc.pp.normalize_total(adata_sct, target_sum=1e4, exclude_highly_expressed=True)
+            adata_sct.raw = adata_sct
 
     # after that, we do the linear scaling
     # log operations and scale operations will hurt the
@@ -164,7 +174,9 @@ def preprocess_csv_to_h5ad(
 
     if do_scale == True:
         sc.pp.scale(adata, max_value=10, zero_center=True)
-        sc.pp.scale(adata_sct, max_value=10, zero_center=True)
+        print("Scale Done!")
+        if do_scTransform == True:
+            sc.pp.scale(adata_sct, max_value=10, zero_center=True)
 
     # 3. save preprocessed h5ad
     if save_h5ad_dir is not None:
@@ -178,7 +190,7 @@ def preprocess_csv_to_h5ad(
         print("Successfully generate preprocessed file: {}".format(save_file_name))
 
         if do_scTransform == True:
-            sct_file_name = save_file_name.replace("_preprocessed.h5ad", "_sct.h5ad")
+            sct_file_name = save_file_name.replace(".h5ad", "_sct.h5ad")
             sct_save_path = os.path.join(save_h5ad_dir, sct_file_name)
             adata_sct.write(sct_save_path)
             print("Successfully generate scTransform preprocessed file: {}".format(sct_file_name))

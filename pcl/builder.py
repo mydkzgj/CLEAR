@@ -35,6 +35,8 @@ class MLPEncoder(nn.Module):
             full_block(num_genes, 1024, p_drop),
             full_block(1024, num_hiddens, p_drop),
             # add one block for features
+            # CJY
+            nn.Linear(num_hiddens, num_hiddens, bias=True),
         )
 
     
@@ -166,6 +168,65 @@ class MoCo(nn.Module):
 
     #     return x_gather[idx_this]
 
+    # cjy use distance replace angle
+    def forward_new(self, im_q, im_k=None, is_eval=False, cluster_result=None, index=None):
+        """
+        Input:
+            im_q: a batch of query images
+            im_k: a batch of key images
+            is_eval: return momentum embeddings (used for clustering)
+            cluster_result: cluster assignments, centroids, and density
+            index: indices for training samples
+        Output:
+            logits, targets, proto_logits, proto_targets
+        """
+
+        if is_eval:
+            k = self.encoder_k(im_q)
+            #k = nn.functional.normalize(k, dim=1)
+            return k
+
+        # compute key features
+        with torch.no_grad():  # no gradient to keys
+            self._momentum_update_key_encoder()  # update the key encoder
+
+            # shuffle for making use of BN
+            # im_k, idx_unshuffle = self._batch_shuffle_ddp(im_k)
+
+            k = self.encoder_k(im_k)  # keys: NxC
+            # print(k.shape)
+            #k = nn.functional.normalize(k, dim=1)
+
+            # undo shuffle
+            # k = self._batch_unshuffle_ddp(k, idx_unshuffle)
+
+        # compute query features
+        q = self.encoder_q(im_q)  # queries: NxC
+        #q = nn.functional.normalize(q, dim=1)
+
+        # compute logits
+        # Einstein sum is more intuitive
+        # positive logits: Nx1   [-1, +1]
+        l_pos = torch.einsum('nc,nc->n', [q.pow(2), k.pow(2)]).unsqueeze(-1)
+        # negative logits: Nxr
+        l_neg = torch.einsum('nc,ck->nk', [q.pow(2), self.queue.clone().detach().pow(2)])
+
+        # logits: Nx(1+r)
+        logits = torch.cat([l_pos, l_neg], dim=1)
+
+        # apply temperature
+        self.T = 0.1
+        logits /= self.T
+
+        # labels: positive key indicators
+        labels = torch.zeros(logits.shape[0], dtype=torch.long).cuda()
+
+        # dequeue and enqueue
+        self._dequeue_and_enqueue(k)
+
+        return logits, labels, None, None
+
+
     def forward(self, im_q, im_k=None, is_eval=False, cluster_result=None, index=None):
         """
         Input:
@@ -203,7 +264,7 @@ class MoCo(nn.Module):
         
         # compute logits
         # Einstein sum is more intuitive
-        # positive logits: Nx1
+        # positive logits: Nx1   [-1, +1]
         l_pos = torch.einsum('nc,nc->n', [q, k]).unsqueeze(-1)
         # negative logits: Nxr
         l_neg = torch.einsum('nc,ck->nk', [q, self.queue.clone().detach()])
@@ -212,6 +273,7 @@ class MoCo(nn.Module):
         logits = torch.cat([l_pos, l_neg], dim=1)
 
         # apply temperature
+        self.T = 0.1
         logits /= self.T
 
         # labels: positive key indicators

@@ -84,15 +84,22 @@ class scRNAMatrixInstance(Dataset):
         
         self.dataset_for_transform = deepcopy(self.data)
         #import pdb; pdb.set_trace()
-        if isinstance(adata_sct.X, np.ndarray):
-            adata_sct = adata_sct.X
+        if adata_sct is not None:
+            if isinstance(adata_sct.X, np.ndarray):
+                adata_sct = adata_sct.X
+            else:
+                adata_sct = adata_sct.X.toarray()
+            self.sct_dataset_for_transform = deepcopy(adata_sct)
         else:
-            adata_sct = adata_sct.X.toarray()
-        self.sct_dataset_for_transform  = deepcopy(adata_sct)
+            self.sct_dataset_for_transform = None
+
         
     def RandomTransform(self, sample, index):
         #tr_sample = deepcopy(sample)
-        tr = transformation(self.dataset_for_transform,self.sct_dataset_for_transform[index], sample)
+        if self.sct_dataset_for_transform is not None:
+            tr = transformation(self.dataset_for_transform, self.sct_dataset_for_transform[index], sample)
+        else:
+            tr = transformation(self.dataset_for_transform, None, sample)
         
         # the crop operation
 
@@ -170,7 +177,7 @@ class transformation():
                     apply_mask_prob: float = 0.5):
 
         s = np.random.uniform(0,1)
-        if s<apply_mask_prob:
+        if s < apply_mask_prob:
             # create the mask for mutation
             mask = self.build_mask(mask_percentage)
             
@@ -186,7 +193,7 @@ class transformation():
                               apply_noise_prob: float=0.3):
 
         s = np.random.uniform(0,1)
-        if s<apply_noise_prob:
+        if s < apply_noise_prob:
             # create the mask for mutation
             mask = self.build_mask(noise_percentage)
             
@@ -200,7 +207,7 @@ class transformation():
                        nb_swap_percentage: float=0.8,
                        apply_nb_prob: float=0.5):
             s = np.random.uniform(0,1)
-            if s<apply_nb_prob:
+            if s < apply_nb_prob:
                 mask = self.build_mask(nb_swap_percentage)
                 self.sct_profile[mask], self.cell_profile[mask]  = self.cell_profile[mask], self.sct_profile[mask]
 

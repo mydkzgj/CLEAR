@@ -33,12 +33,12 @@ model_names = sorted(name for name in models.__dict__
 parser = argparse.ArgumentParser(description='PyTorch scRNA-seq CLEAR Training')
 
 # 1.input h5ad data
-parser.add_argument('--input_h5ad_path', type=str, default= "",
+parser.add_argument('--input_h5ad_path', type=str, default=None,
                     help='path to input h5ad file')
 
 parser.add_argument('--obs_label_colname', type=str, default= None,
                     help='column name of the label in obs')
-parser.add_argument('--input_sct_path', type=str, default= "",
+parser.add_argument('--input_sct_path', type=str, default=None,
                     help='path to input sctransformed h5ad file')
 # 2.hyper-parameters
 parser.add_argument('-j', '--workers', default=1, type=int, metavar='N',
@@ -151,12 +151,18 @@ def main_worker(args):
     print(args)
 
     # 1. Build Dataloader
-
     # Load h5ad data
     input_h5ad_path = args.input_h5ad_path
     processed_adata = sc.read_h5ad(input_h5ad_path)
-    adata_sct = sc.read(args.input_sct_path)
+    if args.input_sct_path is not None:
+        adata_sct = sc.read(args.input_sct_path)
+    else:
+        adata_sct = None
     obs_label_colname = args.obs_label_colname
+
+    labels_names = pd.unique(processed_adata.obs[obs_label_colname])
+    print("Cell: {} Gene: {} CLuster: {}".format(processed_adata.shape[0], processed_adata.shape[1], len(labels_names)))
+    #print("Cluster Name: {}".format(labels_names))
 
     # find dataset name
     pre_path, filename = os.path.split(input_h5ad_path)
@@ -178,13 +184,13 @@ def main_worker(args):
         # without resize, it's better to remove crop
         
         # mask
-        'mask_percentage': 0.2,
+        'mask_percentage': 0.1, #0.2,
         'apply_mask_prob': args.aug_prob,
         
         # (Add) gaussian noise
         'noise_percentage': 0.8,
         'sigma': 0.5,
-        'apply_noise_prob': args.aug_prob, #0,
+        'apply_noise_prob': 0, #args.aug_prob, #0,
 
         # swap with the NB regressed mu
         'nb_percentage': args.nb_percentage,
@@ -192,15 +198,15 @@ def main_worker(args):
 
         # inner swap
         'swap_percentage': 0.1,
-        'apply_swap_prob': args.aug_prob,
+        'apply_swap_prob': 0, #args.aug_prob,
         
         # cross over with 1
         'cross_percentage': 0.25,
-        'apply_cross_prob': args.aug_prob,
+        'apply_cross_prob': 0, #args.aug_prob,
         
         # cross over with many
         'change_percentage': 0.25,
-        'apply_mutation_prob': args.aug_prob
+        'apply_mutation_prob': 0, #args.aug_prob
     }
 
     train_dataset = pcl.loader.scRNAMatrixInstance(
@@ -212,7 +218,7 @@ def main_worker(args):
         )
     eval_dataset = pcl.loader.scRNAMatrixInstance(
         adata=processed_adata,
-        adata_sct = adata_sct,
+        adata_sct=adata_sct,
         obs_label_colname=obs_label_colname,
         transform=False
         )
@@ -220,6 +226,7 @@ def main_worker(args):
     if train_dataset.num_cells < 512:
         args.batch_size = train_dataset.num_cells
         args.pcl_r = train_dataset.num_cells
+        print("Change batch size and pcl_r to num cell={}, due to the num cell < 512".format(processed_adata.shape[0]))
 
     train_sampler = None
     eval_sampler = None
@@ -307,10 +314,10 @@ def main_worker(args):
                     # multiple random experiments
                     best_ari, best_eval_supervised_metrics, best_pd_labels = -1, None, None
                     for random_seed in range(1):
-                        if args.clustering  == "kmeans":
+                        if args.clustering == "kmeans":
                             pd_labels = KMeans(n_clusters=num_cluster, random_state=args.seed).fit(embeddings).labels_
                         elif args.clustering == "leiden":
-                            pd_labels = leiden_clustering(adata, embeddings, args.num_neighbors, args.resolution)
+                            pd_labels = leiden_clustering(processed_adata, embeddings, args.num_neighbors, args.resolution)
                         else:
                             ValueError("Not implemented!")
                         # compute metrics
@@ -388,6 +395,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
         output, target, output_proto, target_proto = model(im_q=images[0], im_k=images[1], cluster_result=None, index=index)
         
         # InfoNCE loss
+        print(torch.equal(images[0], images[1]))
         loss = criterion(output, target)  
 
         losses.update(loss.item(), images[0].size(0))
